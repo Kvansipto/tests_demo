@@ -1,5 +1,6 @@
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
+import framework.pages.ConfirmPaymentPage
 import framework.webDriver
 import helpers.httpClient
 import org.apache.http.client.methods.HttpGet
@@ -10,23 +11,23 @@ import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import org.openqa.selenium.By
-import org.openqa.selenium.support.ui.ExpectedConditions
-import org.openqa.selenium.support.ui.WebDriverWait
 import utils.AuthUtils
 import utils.DataUtils
 import utils.wait
 
 class PaymentTests {
-    private val createUrl = "https://test-app-ext.2ip.in/api/payment/create"
-    private val statusUrl = "https://test-app-ext.2ip.in/api/payment/status/%s"
+    private val baseUrl = "https://test-app-ext.2ip.in"
+    private val createUrl = "$baseUrl/api/payment/create"
+    private val statusUrl = "$baseUrl/api/payment/status/%s"
+    private val confirmUrl = "$baseUrl/operations/confirm"
+    private val fakeOperationId = "fake"
 
     private val objectMapper = ObjectMapper()
 
     companion object {
         @JvmStatic
         @AfterAll
-        fun tearDown(): Unit {
+        fun tearDown() {
             webDriver.quit()
         }
     }
@@ -51,6 +52,26 @@ class PaymentTests {
         confirmPayment(uri, operationId, true)
 
         checkPaymentStatusWithRetries(operationId, "rejected")
+    }
+
+    @Test
+    fun `test payment already processed error`() {
+        val (uri, operationId) = createPayment()
+
+        checkPaymentStatusWithRetries(operationId, "created")
+
+        confirmPayment(uri, operationId, isRejected = false)
+        checkPaymentStatusWithRetries(operationId, "done")
+
+        val failMessage = confirmPaymentWithInvalidId(uri, operationId)
+
+        assertEquals("Operation already processed.", failMessage, "Expected error message not found")
+    }
+
+    @Test
+    fun `test payment does not exist error`() {
+        val failMessage = confirmPaymentWithInvalidId(confirmUrl, fakeOperationId)
+        assertEquals("Operation does not exists.", failMessage, "Expected error message not found")
     }
 
     private fun createPayment(): Pair<String, String> {
@@ -95,30 +116,29 @@ class PaymentTests {
     }
 
     private fun confirmPayment(uri: String, operationId: String, isRejected: Boolean) {
-        //todo post?
-        webDriver.get("$uri?operationId=$operationId")
+        val page = ConfirmPaymentPage(webDriver)
+        page.openConfirmPage(uri, operationId)
 
         val paymentCode = if (isRejected) 1231 else 1234
-        val paymentCodeInput = webDriver.findElement(By.id("code"))
-        paymentCodeInput.sendKeys(paymentCode.toString())
+        page.enterPaymentCode(paymentCode.toString())
+        page.submitPayment()
 
-        val submitButton = webDriver.findElement(By.cssSelector("button[type='submit']"))
-        submitButton.click()
-
-        val successBlockLocator = By.className("success-container")
-
-        val wait = WebDriverWait(webDriver, 10)
-        val successBlock = wait.until(ExpectedConditions.visibilityOfElementLocated(successBlockLocator))
-
-        val successBlockTitle = successBlock.findElement(By.cssSelector("h1")).text
-        val successBlockText = successBlock.findElement(By.cssSelector("p")).text
-
-        assertEquals("Success!", successBlockTitle, "Expected success message not found")
+        val successMessage = page.getSuccessMessage()
         assertTrue(
-            successBlockText.contains("Operation $operationId was accepted"),
+            successMessage.contains("Operation $operationId was accepted"),
             "Operation ID in success message is incorrect"
         )
     }
+
+    private fun confirmPaymentWithInvalidId(uri: String, operationId: String): String {
+        val page = ConfirmPaymentPage(webDriver)
+        page.openConfirmPage(uri, operationId)
+        page.enterPaymentCode("1234")
+        page.submitPayment()
+
+        return page.getFailureMessage()
+    }
+
 
     private fun checkPaymentStatusWithRetries(operationId: String, expectedStatus: String, maxRetries: Int = 14) {
         val statusRequest = HttpGet(statusUrl.format(operationId))
