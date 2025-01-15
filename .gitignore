@@ -1,0 +1,32 @@
+.gradle
+/build/
+!gradle/wrapper/gradle-wrapper.jar
+/out/
+
+### STS ###
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+
+### IntelliJ IDEA ###
+.idea
+*.iws
+*.iml
+*.ipr
+.ideaDataSources
+httpRequests
+.shelf
+
+### NetBeans ###
+nbproject/private/
+build/
+nbbuild/
+dist/
+nbdist/
+.nb-gradle/
+
+### DS meta
+dataSources/**/*.meta
+dataSources/**/*.zip
